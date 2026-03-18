@@ -39,18 +39,43 @@ function writeJson(filePath, data, { dryRun = false } = {}) {
   return text;
 }
 
-function hookCommand(client) {
-  return `npx -y tomsindex hook ${client}`;
+function binPath() {
+  return path.resolve(__dirname, '..', 'bin', 'tomsindex.js');
 }
 
-function mergeClaudeSettings(existing = {}) {
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function nodeCommandArgs(subcommand) {
+  return [binPath(), subcommand];
+}
+
+function hookCommand(client, env = {}) {
+  const envPrefix = Object.entries(env)
+    .map(([k, v]) => `${k}=${shellQuote(v)}`)
+    .join(' ');
+  const cmd = `${shellQuote(process.execPath)} ${shellQuote(binPath())} hook ${client}`;
+  return envPrefix ? `${envPrefix} ${cmd}` : cmd;
+}
+
+function isManagedHookCommand(command, client) {
+  const text = String(command || '');
+  return text.includes(`tomsindex hook ${client}`) || (text.includes('tomsindex.js') && text.includes(`hook ${client}`));
+}
+
+function mergeClaudeSettings(existing = {}, { url, apiKey, askMode } = {}) {
   const settings = { ...existing };
   const hooks = { ...(settings.hooks || {}) };
   const entries = Array.isArray(hooks.UserPromptSubmit) ? hooks.UserPromptSubmit.slice() : [];
-  const command = hookCommand('claude');
+  const env = {};
+  if (url) env.TOMSINDEX_URL = url;
+  if (apiKey) env.TOMSINDEX_API_KEY = apiKey;
+  if (askMode) env.TOMSINDEX_ASK_MODE = askMode;
+  const command = hookCommand('claude', env);
   const withoutManaged = entries.filter((entry) => {
     const hs = Array.isArray(entry?.hooks) ? entry.hooks : [];
-    return !hs.some((hook) => hook?.command === command || String(hook?.command || '').includes('tomsindex hook claude'));
+    return !hs.some((hook) => hook?.command === command || isManagedHookCommand(hook?.command, 'claude'));
   });
   withoutManaged.push({
     hooks: [{ type: 'command', command, timeout: 5 }],
@@ -66,7 +91,7 @@ function removeClaudeSettings(existing = {}) {
   settings.hooks = { ...settings.hooks };
   settings.hooks.UserPromptSubmit = settings.hooks.UserPromptSubmit.filter((entry) => {
     const hs = Array.isArray(entry?.hooks) ? entry.hooks : [];
-    return !hs.some((hook) => String(hook?.command || '').includes('tomsindex hook claude'));
+    return !hs.some((hook) => isManagedHookCommand(hook?.command, 'claude'));
   });
   if (settings.hooks.UserPromptSubmit.length === 0) delete settings.hooks.UserPromptSubmit;
   if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
@@ -79,7 +104,7 @@ function claudeSettingsPath(options = {}) {
 
 function installClaudeHook(options = {}) {
   const filePath = claudeSettingsPath(options);
-  const merged = mergeClaudeSettings(readJson(filePath));
+  const merged = mergeClaudeSettings(readJson(filePath), options);
   return { filePath, content: writeJson(filePath, merged, options) };
 }
 
@@ -149,13 +174,15 @@ function removeFeature(text, key) {
   return `${lines.filter((line, idx) => idx <= start || idx >= end || !pattern.test(line)).join('\n').trimEnd()}\n`;
 }
 
-function codexManagedBlock({ url, apiKey, publicOnly = false } = {}) {
+function codexManagedBlock({ url, apiKey, publicOnly = false, askMode = 'generate' } = {}) {
   const envLines = [`TOMSINDEX_URL = ${quoteToml(url || 'https://tomsindex.com')}`];
   if (!publicOnly && apiKey) envLines.push(`TOMSINDEX_API_KEY = ${quoteToml(apiKey)}`);
+  envLines.push(`TOMSINDEX_ASK_MODE = ${quoteToml(askMode)}`);
+  const [mcpBin, mcpCommand] = nodeCommandArgs('mcp');
   return `${BEGIN}
 [mcp_servers.tomsindex]
-command = "npx"
-args = ["-y", "tomsindex", "mcp"]
+command = ${quoteToml(process.execPath)}
+args = [${quoteToml(mcpBin)}, ${quoteToml(mcpCommand)}]
 startup_timeout_sec = 10
 tool_timeout_sec = 60
 
@@ -163,7 +190,9 @@ tool_timeout_sec = 60
 ${envLines.join('\n')}
 
 [[hooks.UserPromptSubmit]]
-command = "npx -y tomsindex hook codex"
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = ${quoteToml(hookCommand('codex'))}
 timeout = 5
 statusMessage = "Adding Tom's Index context"
 ${END}`;
@@ -206,12 +235,14 @@ module.exports = {
   claudeSettingsPath,
   codexConfigPath,
   hookCommand,
+  isManagedHookCommand,
   installClaudeHook,
   uninstallClaudeHook,
   installCodex,
   uninstallCodex,
   mergeClaudeSettings,
   removeClaudeSettings,
+  binPath,
   stripManagedBlock,
   ensureFeature,
   removeFeature,
