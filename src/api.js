@@ -29,9 +29,10 @@ async function search({ baseUrl, apiKey, query, limit = 5, feedback = [] }) {
   return res.json();
 }
 
-async function ask({ baseUrl, apiKey, q, caller_model, min_model_tier, min_similarity, alternatives }) {
+async function ask({ baseUrl, apiKey, q, caller_model, min_model_tier, min_similarity, alternatives, mode }) {
   const url = new URL(`${normalizeBaseUrl(baseUrl)}/v1/answer`);
   url.searchParams.set('q', q);
+  if (mode) url.searchParams.set('mode', mode);
   if (caller_model) url.searchParams.set('caller_model', caller_model);
   if (min_model_tier !== undefined) url.searchParams.set('min_model_tier', String(min_model_tier));
   if (min_similarity !== undefined) url.searchParams.set('min_similarity', String(min_similarity));

@@ -4,6 +4,7 @@ const { normalizeBaseUrl, search, ask, hints, hintsFeedback } = require('./api')
 
 const BASE_URL = normalizeBaseUrl(process.env.TOMSINDEX_URL);
 const API_KEY = process.env.TOMSINDEX_API_KEY || '';
+const DEFAULT_ASK_MODE = process.env.TOMSINDEX_ASK_MODE || 'generate';
 
 const TOOLS = [
   {
@@ -30,25 +31,13 @@ const TOOLS = [
     },
   },
   {
-    name: 'web_search',
-    description: 'Backward-compatible alias for tomsindex_search.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string' },
-        limit: { type: 'number' },
-        feedback: { type: 'array' },
-      },
-      required: ['query'],
-    },
-  },
-  {
     name: 'tomsindex_ask',
     description: 'Look up a cached or generated answer from Tom\'s Index answer cache.',
     inputSchema: {
       type: 'object',
       properties: {
         q: { type: 'string', description: 'Question to answer.' },
+        mode: { type: 'string', enum: ['lookup', 'generate'], description: 'lookup: cache-only, returns null on miss. generate: on cache miss, runs a web search, summarizes the top results, caches the answer, and returns it. Costs 1 search credit.' },
         caller_model: { type: 'string' },
         min_model_tier: { type: 'number' },
         min_similarity: { type: 'number' },
@@ -101,15 +90,20 @@ function textFromSearch(data) {
 function textFromAnswer(data) {
   if (data.answer?.text) return data.answer.text;
   if (data.text) return data.text;
+  if (data.cache_hit === false || data.answer === null) {
+    return `No cached Tom's Index answer found for "${data.query || 'this question'}". Use tomsindex_search next for web/source context, or tomsindex_hints if this is a coding/build task. Raw response:\n${JSON.stringify(data, null, 2)}`;
+  }
   return JSON.stringify(data, null, 2);
 }
 
 async function callTool(name, args) {
-  if (name === 'tomsindex_search' || name === 'web_search') {
+  logMcpCall(name, args);
+  if (name === 'tomsindex_search') {
     return textFromSearch(await search({ baseUrl: BASE_URL, apiKey: API_KEY, ...args }));
   }
   if (name === 'tomsindex_ask') {
-    return textFromAnswer(await ask({ baseUrl: BASE_URL, apiKey: API_KEY, ...args }));
+    const askArgs = { mode: DEFAULT_ASK_MODE, ...args };
+    return textFromAnswer(await ask({ baseUrl: BASE_URL, apiKey: API_KEY, ...askArgs }));
   }
   if (name === 'tomsindex_hints') {
     return JSON.stringify(await hints({ baseUrl: BASE_URL, apiKey: API_KEY, ...args }), null, 2);
@@ -118,6 +112,17 @@ async function callTool(name, args) {
     return JSON.stringify(await hintsFeedback({ baseUrl: BASE_URL, apiKey: API_KEY, ...args }), null, 2);
   }
   throw new Error(`Unknown tool: ${name}`);
+}
+
+function logMcpCall(name, args) {
+  const filePath = process.env.TOMSINDEX_MCP_LOG;
+  if (!filePath) return;
+  const line = JSON.stringify({
+    at: new Date().toISOString(),
+    tool: name,
+    args,
+  });
+  require('fs').appendFileSync(filePath, `${line}\n`);
 }
 
 async function handleMessage(line) {
@@ -176,4 +181,4 @@ function runMcp() {
   process.stderr.write(`[tomsindex-mcp] Ready base=${BASE_URL} key=${API_KEY ? 'set' : 'none'}\n`);
 }
 
-module.exports = { TOOLS, callTool, handleMessage, runMcp };
+module.exports = { TOOLS, callTool, handleMessage, logMcpCall, runMcp };
