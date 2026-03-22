@@ -8,6 +8,7 @@ const { runHook } = require('./hook');
 const {
   claudeSettingsPath,
   codexConfigPath,
+  binPath,
   installClaudeHook,
   uninstallClaudeHook,
   installCodex,
@@ -38,7 +39,7 @@ function parseArgs(argv) {
 function help() {
   return `Usage:
   tomsindex
-  tomsindex install [--client claude|codex|both] [--url URL] [--api-key KEY] [--public-only] [--dry-run] [--home PATH]
+  tomsindex install [--client claude|codex|both] [--url URL] [--api-key KEY] [--public-only] [--ask-mode lookup|generate] [--dry-run] [--home PATH]
   tomsindex uninstall [--client claude|codex|both] [--dry-run] [--home PATH]
   tomsindex doctor [--home PATH]
   tomsindex mcp
@@ -66,6 +67,27 @@ async function promptApiKey({ input = process.stdin, output = process.stdout } =
   }
 }
 
+async function promptAskMode({ input = process.stdin, output = process.stdout } = {}) {
+  const rl = readline.createInterface({ input, output });
+  try {
+    const answer = await rl.question('Auto-generate answers on cache miss? (uses 1 search credit per miss, otherwise cache-only) [Y/n]: ');
+    const trimmed = answer.trim().toLowerCase();
+    return (trimmed === '' || trimmed === 'y' || trimmed === 'yes') ? 'generate' : 'lookup';
+  } finally {
+    rl.close();
+  }
+}
+
+async function resolveAskMode(args, io) {
+  if (args['ask-mode']) {
+    const mode = args['ask-mode'];
+    if (mode !== 'lookup' && mode !== 'generate') throw new Error('--ask-mode must be "lookup" or "generate".');
+    return mode;
+  }
+  if (args['public-only']) return 'lookup';
+  return promptAskMode(io);
+}
+
 async function resolveApiKey(args, io) {
   if (args['public-only']) return '';
   const apiKey = args['api-key'] || process.env.TOMSINDEX_API_KEY || await promptApiKey(io);
@@ -82,21 +104,26 @@ async function install(argv, io) {
     url: args.url || process.env.TOMSINDEX_URL || 'https://tomsindex.com',
     apiKey: await resolveApiKey(args, io),
     publicOnly: Boolean(args['public-only']),
+    askMode: await resolveAskMode(args, io),
   };
   const out = [];
   for (const client of clients(args.client)) {
     if (client === 'claude') {
       const res = installClaudeHook(options);
       out.push(`${options.dryRun ? 'Would update' : 'Updated'} ${res.filePath}`);
-      const mcpArgs = ['mcp', 'add', '--scope', 'user', 'tomsindex', '--env', `TOMSINDEX_URL=${options.url}`];
+      const mcpArgs = ['mcp', 'add', '--scope', 'user', 'tomsindex', '--env', `TOMSINDEX_URL=${options.url}`, '--env', `TOMSINDEX_ASK_MODE=${options.askMode}`];
       if (!options.publicOnly && options.apiKey) mcpArgs.push('--env', `TOMSINDEX_API_KEY=${options.apiKey}`);
-      mcpArgs.push('--', 'npx', '-y', 'tomsindex', 'mcp');
+      mcpArgs.push('--', process.execPath, binPath(), 'mcp');
       if (options.dryRun) {
         out.push(`Would run: claude ${mcpArgs.join(' ')}`);
       } else {
+        spawnSync('claude', ['mcp', 'remove', 'tomsindex', '--scope', 'user'], { stdio: 'pipe', encoding: 'utf8' });
         const added = spawnSync('claude', mcpArgs, { stdio: 'pipe', encoding: 'utf8' });
         if (added.status === 0) out.push('Updated Claude MCP server: tomsindex');
-        else out.push(`warn Claude MCP add failed; run manually: claude ${mcpArgs.join(' ')}`);
+        else {
+          const detail = (added.stderr || added.stdout || '').trim();
+          out.push(`warn Claude MCP add failed${detail ? `: ${detail}` : ''}; run manually: claude ${mcpArgs.join(' ')}`);
+        }
       }
     } else {
       const res = installCodex(options);
@@ -174,4 +201,4 @@ async function main(argv) {
   throw new Error(`Unknown command: ${command}\n\n${help()}`);
 }
 
-module.exports = { parseArgs, promptApiKey, resolveApiKey, install, uninstall, doctor, main };
+module.exports = { parseArgs, promptApiKey, promptAskMode, resolveApiKey, resolveAskMode, install, uninstall, doctor, main };
