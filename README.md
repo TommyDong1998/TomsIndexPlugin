@@ -48,7 +48,6 @@ tomsindex hook codex
 ## MCP Tools
 
 - `tomsindex_search`: web/documentation search via `POST /v1/tools/web_search`
-- `web_search`: backward-compatible alias for `tomsindex_search`
 - `tomsindex_ask`: answer cache lookup via `GET /v1/answer`
 - `tomsindex_hints`: coding-task hints via `POST /v1/hints`
 - `tomsindex_hints_feedback`: outcome feedback via `POST /v1/hints/feedback`
@@ -66,3 +65,14 @@ Codex:
 - Managed Codex blocks are wrapped with comments so repeated installs are idempotent.
 
 Both installers create timestamped backups before writing existing config files.
+
+## Debugging
+
+To verify whether Codex calls a Tom's Index MCP tool, enable MCP call logging before starting Codex:
+
+```bash
+TOMSINDEX_MCP_LOG=/tmp/tomsindex-mcp.log codex
+cat /tmp/tomsindex-mcp.log
+```
+
+Each MCP tool call is logged as one JSON line.
