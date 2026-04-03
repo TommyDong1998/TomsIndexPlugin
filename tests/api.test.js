@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { search } = require('../src/api');
+const { search } = require('../src/shared/api');
 
 test('search calls /v1/tools/web_search', async () => {
   const originalFetch = global.fetch;
