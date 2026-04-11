@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
-const { callTool } = require('../src/mcp');
+const { callTool } = require('../src/shared/mcp');
 
 const BIN = path.join(__dirname, '..', 'bin', 'tomsindex.js');
 
