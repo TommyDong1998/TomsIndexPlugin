@@ -3,17 +3,26 @@
 const fs = require('fs');
 const readline = require('readline/promises');
 const { spawnSync } = require('child_process');
-const { runMcp } = require('./mcp');
-const { runHook } = require('./hook');
+const { runMcp } = require('./shared/mcp');
+const { runHook } = require('./shared/hook');
+const { binPath } = require('./shared/config');
 const {
   claudeSettingsPath,
-  codexConfigPath,
-  binPath,
   installClaudeHook,
   uninstallClaudeHook,
+  installClaudeMd,
+  uninstallClaudeMd,
+} = require('./claude/config');
+const {
+  codexConfigPath,
   installCodex,
   uninstallCodex,
-} = require('./config');
+} = require('./codex/config');
+const {
+  cursorConfigPath,
+  installCursor,
+  uninstallCursor,
+} = require('./cursor/config');
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -39,28 +48,28 @@ function parseArgs(argv) {
 function help() {
   return `Usage:
   tomsindex
-  tomsindex install [--client claude|codex|both] [--url URL] [--api-key KEY] [--public-only] [--ask-mode lookup|generate] [--dry-run] [--home PATH]
-  tomsindex uninstall [--client claude|codex|both] [--dry-run] [--home PATH]
+  tomsindex install [--client claude|codex|cursor|all] [--url URL] [--api-key KEY] [--public-only] [--ask-mode lookup|generate] [--dry-run] [--home PATH]
+  tomsindex uninstall [--client claude|codex|cursor|all] [--dry-run] [--home PATH]
   tomsindex doctor [--home PATH]
   tomsindex mcp
   tomsindex hook claude|codex
 
-Get an API key: https://tomsindex.com/dashboard`;
+Get an API key: https://tomsindex.com/quick-key`;
 }
 
 function clients(value) {
-  const selected = value || 'both';
-  if (selected === 'both') return ['claude', 'codex'];
-  if (selected === 'claude' || selected === 'codex') return [selected];
+  const selected = value || 'all';
+  if (selected === 'all' || selected === 'both') return ['claude', 'codex', 'cursor'];
+  if (selected === 'claude' || selected === 'codex' || selected === 'cursor') return [selected];
   throw new Error(`Unknown client: ${selected}`);
 }
 
 async function promptApiKey({ input = process.stdin, output = process.stdout } = {}) {
-  output.write('Get your Tom\'s Index API key here:\n');
-  output.write('https://tomsindex.com/dashboard\n\n');
+  output.write('\n  Get your API key (opens browser, creates key automatically):\n');
+  output.write('  \x1b[36mhttps://tomsindex.com/quick-key\x1b[0m\n\n');
   const rl = readline.createInterface({ input, output });
   try {
-    const answer = await rl.question('Paste your API key (starts with srch_): ');
+    const answer = await rl.question('  Paste your API key: ');
     return answer.trim();
   } finally {
     rl.close();
@@ -70,7 +79,7 @@ async function promptApiKey({ input = process.stdin, output = process.stdout } =
 async function promptAskMode({ input = process.stdin, output = process.stdout } = {}) {
   const rl = readline.createInterface({ input, output });
   try {
-    const answer = await rl.question('Auto-generate answers on cache miss? (uses 1 search credit per miss, otherwise cache-only) [Y/n]: ');
+    const answer = await rl.question('Auto-generate answers on cache miss? (recommended, uses 1 search credit per miss) [Y/n] (default: Yes): ');
     const trimmed = answer.trim().toLowerCase();
     return (trimmed === '' || trimmed === 'y' || trimmed === 'yes') ? 'generate' : 'lookup';
   } finally {
@@ -91,7 +100,7 @@ async function resolveAskMode(args, io) {
 async function resolveApiKey(args, io) {
   if (args['public-only']) return '';
   const apiKey = args['api-key'] || process.env.TOMSINDEX_API_KEY || await promptApiKey(io);
-  if (!apiKey) throw new Error('Missing API key. Create one at https://tomsindex.com/dashboard and run install again.');
+  if (!apiKey) throw new Error('Missing API key. Get one at https://tomsindex.com/quick-key and run install again.');
   if (!apiKey.startsWith('srch_')) throw new Error('That does not look like a Tom\'s Index API key. Expected a key starting with srch_.');
   return apiKey;
 }
@@ -111,6 +120,8 @@ async function install(argv, io) {
     if (client === 'claude') {
       const res = installClaudeHook(options);
       out.push(`${options.dryRun ? 'Would update' : 'Updated'} ${res.filePath}`);
+      const mdRes = installClaudeMd(options);
+      out.push(`${options.dryRun ? 'Would update' : 'Updated'} ${mdRes.filePath}`);
       const mcpArgs = ['mcp', 'add', '--scope', 'user', 'tomsindex', '--env', `TOMSINDEX_URL=${options.url}`, '--env', `TOMSINDEX_ASK_MODE=${options.askMode}`];
       if (!options.publicOnly && options.apiKey) mcpArgs.push('--env', `TOMSINDEX_API_KEY=${options.apiKey}`);
       mcpArgs.push('--', process.execPath, binPath(), 'mcp');
@@ -125,8 +136,11 @@ async function install(argv, io) {
           out.push(`warn Claude MCP add failed${detail ? `: ${detail}` : ''}; run manually: claude ${mcpArgs.join(' ')}`);
         }
       }
-    } else {
+    } else if (client === 'codex') {
       const res = installCodex(options);
+      out.push(`${options.dryRun ? 'Would update' : 'Updated'} ${res.filePath}`);
+    } else if (client === 'cursor') {
+      const res = installCursor(options);
       out.push(`${options.dryRun ? 'Would update' : 'Updated'} ${res.filePath}`);
     }
   }
@@ -138,9 +152,11 @@ function uninstall(argv) {
   const options = { home: args.home, dryRun: Boolean(args['dry-run']) };
   const out = [];
   for (const client of clients(args.client)) {
-    const res = client === 'claude' ? uninstallClaudeHook(options) : uninstallCodex(options);
-    out.push(`${options.dryRun ? 'Would update' : 'Updated'} ${res.filePath}`);
     if (client === 'claude') {
+      const res = uninstallClaudeHook(options);
+      out.push(`${options.dryRun ? 'Would update' : 'Updated'} ${res.filePath}`);
+      const mdRes = uninstallClaudeMd(options);
+      out.push(`${options.dryRun ? 'Would update' : 'Updated'} ${mdRes.filePath}`);
       if (options.dryRun) {
         out.push('Would run: claude mcp remove tomsindex');
       } else {
@@ -148,6 +164,12 @@ function uninstall(argv) {
         if (removed.status === 0) out.push('Removed Claude MCP server: tomsindex');
         else out.push('warn Claude MCP remove failed; run manually: claude mcp remove tomsindex');
       }
+    } else if (client === 'codex') {
+      const res = uninstallCodex(options);
+      out.push(`${options.dryRun ? 'Would update' : 'Updated'} ${res.filePath}`);
+    } else if (client === 'cursor') {
+      const res = uninstallCursor(options);
+      out.push(`${options.dryRun ? 'Would update' : 'Updated'} ${res.filePath}`);
     }
   }
   return out.join('\n');
@@ -160,9 +182,25 @@ function doctor(argv) {
   rows.push({ name: 'node >=18.17', ok: process.versions.node.split('.').map(Number)[0] >= 18 });
   rows.push({ name: 'Claude settings', ok: fs.existsSync(claudeSettingsPath({ home })) });
   rows.push({ name: 'Codex config', ok: fs.existsSync(codexConfigPath({ home })) });
+  rows.push({ name: 'Cursor config', ok: fs.existsSync(cursorConfigPath({ home })) });
   rows.push({ name: 'API key env', ok: Boolean(process.env.TOMSINDEX_API_KEY) });
   rows.push({ name: 'CLI starts', ok: spawnSync(process.execPath, [require.main?.filename || process.argv[1], '--help'], { timeout: 1000 }).status === 0 });
   return rows.map((row) => `${row.ok ? 'ok' : 'warn'} ${row.name}`).join('\n');
+}
+
+async function checkForUpdate() {
+  try {
+    const pkg = require('../package.json');
+    const res = await fetch('https://registry.npmjs.org/tomsindex/latest', {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.version && data.version !== pkg.version) {
+      console.log(`\n  Update available: ${pkg.version} → ${data.version}`);
+      console.log(`  Run: npx tomsindex@latest\n`);
+    }
+  } catch {}
 }
 
 async function main(argv) {
@@ -172,6 +210,7 @@ async function main(argv) {
     return;
   }
   if (!command) {
+    await checkForUpdate();
     console.log(await install([]));
     return;
   }
