@@ -66,7 +66,7 @@ test('MCP initialize and tools/list include canonical tools', async () => {
     assert.ok(names.includes('tomsindex_search'));
     assert.ok(!names.includes('web_search'));
     assert.ok(names.includes('tomsindex_ask'));
-    assert.ok(names.includes('tomsindex_hints'));
+    assert.ok(names.includes('tomsindex_hint'));
   } finally {
     client.close();
   }

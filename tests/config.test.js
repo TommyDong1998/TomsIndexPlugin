@@ -8,13 +8,26 @@ const path = require('path');
 const {
   installClaudeHook,
   uninstallClaudeHook,
+  installClaudeMd,
+  uninstallClaudeMd,
+  mergeClaudeSettings,
+} = require('../src/claude/config');
+const {
   installCodex,
   uninstallCodex,
-  mergeClaudeSettings,
+} = require('../src/codex/config');
+const {
+  installCursor,
+  uninstallCursor,
+  cursorConfigPath,
+} = require('../src/cursor/config');
+const {
   ensureFeature,
   removeFeature,
   binPath,
-} = require('../src/config');
+  BEGIN,
+  END,
+} = require('../src/shared/config');
 const { resolveApiKey, resolveAskMode } = require('../src/cli');
 
 function tempHome() {
@@ -125,6 +138,40 @@ test('resolveAskMode accepts explicit mode and defaults public-only to lookup', 
   );
 });
 
+test('installClaudeMd writes managed block and uninstall removes it', () => {
+  const home = tempHome();
+  const file = path.join(home, '.claude', 'CLAUDE.md');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '# My Instructions\n\nExisting content here.\n');
+
+  installClaudeMd({ home });
+  const installed = fs.readFileSync(file, 'utf8');
+  assert.match(installed, /Existing content here/);
+  assert.match(installed, new RegExp(BEGIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(installed, /MANDATORY tool usage rules/);
+  assert.match(installed, /tomsindex_ask/);
+  assert.match(installed, /tomsindex_search/);
+  assert.match(installed, /tomsindex_hint/);
+
+  // Idempotent
+  installClaudeMd({ home });
+  const twice = fs.readFileSync(file, 'utf8');
+  assert.equal((twice.match(new RegExp(BEGIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length, 1);
+
+  uninstallClaudeMd({ home });
+  const removed = fs.readFileSync(file, 'utf8');
+  assert.match(removed, /Existing content here/);
+  assert.doesNotMatch(removed, /tomsindex_ask/);
+});
+
+test('installClaudeMd creates file if it does not exist', () => {
+  const home = tempHome();
+  installClaudeMd({ home });
+  const file = path.join(home, '.claude', 'CLAUDE.md');
+  const content = fs.readFileSync(file, 'utf8');
+  assert.match(content, /MANDATORY tool usage rules/);
+});
+
 test('installCodex includes TOMSINDEX_ASK_MODE in managed block', () => {
   const home = tempHome();
   const file = path.join(home, '.codex', 'config.toml');
@@ -134,4 +181,40 @@ test('installCodex includes TOMSINDEX_ASK_MODE in managed block', () => {
   installCodex({ home, url: 'https://tomsindex.com', apiKey: 'srch_test', askMode: 'lookup' });
   const installed = fs.readFileSync(file, 'utf8');
   assert.match(installed, /TOMSINDEX_ASK_MODE = "lookup"/);
+});
+
+test('installCursor writes MCP config and uninstall removes it', () => {
+  const home = tempHome();
+  installCursor({ home, url: 'https://tomsindex.com', apiKey: 'srch_test', askMode: 'generate' });
+  const file = cursorConfigPath({ home });
+  const installed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.ok(installed.mcpServers.tomsindex);
+  assert.equal(installed.mcpServers.tomsindex.env.TOMSINDEX_API_KEY, 'srch_test');
+  assert.equal(installed.mcpServers.tomsindex.env.TOMSINDEX_ASK_MODE, 'generate');
+  assert.match(installed.mcpServers.tomsindex.args[0], /tomsindex\.js$/);
+
+  uninstallCursor({ home });
+  const removed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(removed.mcpServers, undefined);
+});
+
+test('installCursor is idempotent', () => {
+  const home = tempHome();
+  installCursor({ home, url: 'https://tomsindex.com', apiKey: 'srch_test' });
+  installCursor({ home, url: 'https://tomsindex.com', apiKey: 'srch_test' });
+  const file = cursorConfigPath({ home });
+  const installed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(Object.keys(installed.mcpServers).length, 1);
+});
+
+test('installCursor preserves existing MCP servers', () => {
+  const home = tempHome();
+  const file = cursorConfigPath({ home });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ mcpServers: { other: { command: 'echo' } } }));
+
+  installCursor({ home, url: 'https://tomsindex.com', apiKey: 'srch_test' });
+  const installed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.ok(installed.mcpServers.other);
+  assert.ok(installed.mcpServers.tomsindex);
 });
