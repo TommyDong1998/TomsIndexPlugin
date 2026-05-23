@@ -49,14 +49,22 @@ tomsindex hook codex
 
 - `tomsindex_search`: web/documentation search via `POST /v1/tools/web_search`
 - `tomsindex_ask`: answer cache lookup via `GET /v1/answer`
-- `tomsindex_hints`: coding-task hints via `POST /v1/hints`
+- `tomsindex_hint`: one actionable hint + follow-up questions via `POST /v1/hint`
+- `tomsindex_hints`: structured coding-task hints via `POST /v1/hints`
 - `tomsindex_hints_feedback`: outcome feedback via `POST /v1/hints/feedback`
+
+## Session Context
+
+The `UserPromptSubmit` hook automatically sends session context (recent messages, file paths, errors) to Tom's Index on every prompt. This makes `tomsindex_hint` responses specific to your current work — referencing your actual files and errors instead of giving generic advice.
+
+Context is stored server-side for 1 hour per session. No manual setup needed.
 
 ## Config Behavior
 
 Claude:
 
 - Adds a `UserPromptSubmit` hook to `~/.claude/settings.json`.
+- Hook reads conversation transcript and sends session context to `POST /v1/session/context`.
 - Runs `claude mcp add --scope user tomsindex ...` when available.
 
 Codex:
