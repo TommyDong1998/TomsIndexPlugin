@@ -1,7 +1,7 @@
 {
   "name": "tomsindex",
-  "version": "0.1.0",
-  "description": "Install Tom's Index MCP tools and hooks for Claude Code and Codex CLI.",
+  "version": "0.2.0",
+  "description": "Install Tom's Index MCP tools and hooks for Claude Code, Codex CLI, and Cursor.",
   "license": "MIT",
   "type": "commonjs",
   "bin": {
