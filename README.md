@@ -1,86 +1,77 @@
-# TomsIndex CLI
+# Tom's Index — Smarter AI Coding Assistants
 
-Installs Tom's Index MCP tools and prompt hooks for Claude Code and Codex CLI.
+Tom's Index supercharges your AI coding tools with real-time web search, contextual hints, and instant answers — so your AI assistant writes better code, faster.
 
-## Install
+Works with **Claude Code** and **Codex CLI**.
+
+## Quick Start
+
+1. **Get your API key** at [tomsindex.com/dashboard](https://tomsindex.com/dashboard)
+
+2. **Install with one command:**
 
 ```bash
 npx tomsindex
 ```
 
-The installer prints the API key page, asks you to paste your key, then installs for both Claude Code and Codex CLI.
+That's it. The installer will guide you through setup.
 
-Get a key here:
+## What You Get
 
-```text
-https://tomsindex.com/dashboard
+- **Web & Documentation Search** — Your AI assistant can search the web and pull in up-to-date docs, so it never relies on stale training data.
+- **Instant Answers** — Common questions are answered immediately from a fast answer cache.
+- **Contextual Hints** — Tom's Index reads your current session (files, errors, recent messages) and gives your AI assistant targeted, actionable guidance specific to what you're working on.
+- **Automatic Context Sync** — Every time you send a prompt, your session context is sent to Tom's Index in the background. No manual setup — it just works.
+
+## Install Options
+
+**Interactive install (recommended):**
+
+```bash
+npx tomsindex
 ```
 
-Non-interactive install:
+**Non-interactive install:**
 
 ```bash
 npx tomsindex install --api-key srch_...
 ```
 
-Defaults:
-
-- `--client both`
-- user/global config
-- `--url https://tomsindex.com`
-
-Use `--dry-run` to preview config changes:
+**Install for a specific client:**
 
 ```bash
-npx tomsindex install --client both --api-key srch_... --dry-run
+npx tomsindex install --client claude
+npx tomsindex install --client codex
 ```
 
-## Commands
+**Preview changes before applying:**
 
 ```bash
-tomsindex install --client claude|codex|both --url https://tomsindex.com --api-key srch_...
-tomsindex uninstall --client claude|codex|both
-tomsindex doctor
-tomsindex mcp
-tomsindex hook claude
-tomsindex hook codex
+npx tomsindex install --api-key srch_... --dry-run
 ```
 
-## MCP Tools
+## Other Commands
 
-- `tomsindex_search`: web/documentation search via `POST /v1/tools/web_search`
-- `tomsindex_ask`: answer cache lookup via `GET /v1/answer`
-- `tomsindex_hint`: one actionable hint + follow-up questions via `POST /v1/hint`
-- `tomsindex_hints`: structured coding-task hints via `POST /v1/hints`
-- `tomsindex_hints_feedback`: outcome feedback via `POST /v1/hints/feedback`
+```bash
+npx tomsindex doctor       # Check your setup for issues
+npx tomsindex uninstall    # Remove Tom's Index from your tools
+```
 
-## Session Context
+## Troubleshooting
 
-The `UserPromptSubmit` hook automatically sends session context (recent messages, file paths, errors) to Tom's Index on every prompt. This makes `tomsindex_hint` responses specific to your current work — referencing your actual files and errors instead of giving generic advice.
+Run the doctor command to diagnose any issues:
 
-Context is stored server-side for 1 hour per session. No manual setup needed.
+```bash
+npx tomsindex doctor
+```
 
-## Config Behavior
-
-Claude:
-
-- Adds a `UserPromptSubmit` hook to `~/.claude/settings.json`.
-- Hook reads conversation transcript and sends session context to `POST /v1/session/context`.
-- Runs `claude mcp add --scope user tomsindex ...` when available.
-
-Codex:
-
-- Adds `[features].hooks = true`, MCP config, and a `UserPromptSubmit` hook to `~/.codex/config.toml`.
-- Managed Codex blocks are wrapped with comments so repeated installs are idempotent.
-
-Both installers create timestamped backups before writing existing config files.
-
-## Debugging
-
-To verify whether Codex calls a Tom's Index MCP tool, enable MCP call logging before starting Codex:
+To verify MCP tool calls are working in Codex, enable logging:
 
 ```bash
 TOMSINDEX_MCP_LOG=/tmp/tomsindex-mcp.log codex
 cat /tmp/tomsindex-mcp.log
 ```
 
-Each MCP tool call is logged as one JSON line.
+## How It Works
+
+Tom's Index installs as an MCP server and a prompt hook into your AI coding tool. The prompt hook automatically sends lightweight session context on each prompt, so the MCP tools can return answers tailored to your current task. Config backups are created automatically before any changes are made.
