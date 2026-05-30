@@ -1,6 +1,6 @@
 # Tom's Index — Smarter AI Coding Assistants
 
-Tom's Index supercharges your AI coding tools with real-time web search, contextual hints, and instant answers — so your AI assistant writes better code, faster.
+Tom's Index supercharges your AI coding tools with real-time web search, contextual hints, and free cached lookups for existing plans, architecture notes, and coding solutions so your AI assistant writes better code, faster.
 
 Works with **Claude Code** and **Codex CLI**.
 
@@ -19,7 +19,7 @@ That's it. The installer will guide you through setup.
 ## What You Get
 
 - **Web & Documentation Search** — Your AI assistant can search the web and pull in up-to-date docs, so it never relies on stale training data.
-- **Instant Answers** — Common questions are answered immediately from a fast answer cache.
+- **Cached Solutions** — Search existing cached plans, architecture notes, and coding solutions by question text, tags, source, or sort order. Existing solution lookups are free.
 - **Contextual Hints** — Tom's Index reads your current session (files, errors, recent messages) and gives your AI assistant targeted, actionable guidance specific to what you're working on.
 - **Automatic Context Sync** — Every time you send a prompt, your session context is sent to Tom's Index in the background. No manual setup — it just works.
 
@@ -74,4 +74,4 @@ cat /tmp/tomsindex-mcp.log
 
 ## How It Works
 
-Tom's Index installs as an MCP server and a prompt hook into your AI coding tool. The prompt hook automatically sends lightweight session context on each prompt, so the MCP tools can return answers tailored to your current task. Config backups are created automatically before any changes are made.
+Tom's Index installs as an MCP server and a prompt hook into your AI coding tool. The prompt hook automatically sends lightweight session context on each prompt, so the MCP tools can return results tailored to your current task. Config backups are created automatically before any changes are made.

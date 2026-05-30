@@ -1,12 +1,18 @@
 {
   "name": "tomsindex",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Install Tom's Index MCP tools and hooks for Claude Code, Codex CLI, and Cursor.",
   "license": "MIT",
   "type": "commonjs",
   "bin": {
     "tomsindex": "bin/tomsindex.js"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=18.17"
   },

@@ -15,14 +15,13 @@ const {
   stripManagedBlock,
 } = require('../shared/config');
 
-function mergeClaudeSettings(existing = {}, { url, apiKey, askMode } = {}) {
+function mergeClaudeSettings(existing = {}, { url, apiKey } = {}) {
   const settings = { ...existing };
   const hooks = { ...(settings.hooks || {}) };
   const entries = Array.isArray(hooks.UserPromptSubmit) ? hooks.UserPromptSubmit.slice() : [];
   const env = {};
   if (url) env.TOMSINDEX_URL = url;
   if (apiKey) env.TOMSINDEX_API_KEY = apiKey;
-  if (askMode) env.TOMSINDEX_ASK_MODE = askMode;
   const command = hookCommand('claude', env);
   const withoutManaged = entries.filter((entry) => {
     const hs = Array.isArray(entry?.hooks) ? entry.hooks : [];
@@ -73,13 +72,18 @@ function claudeMdBlock() {
   const lines = [
     BEGIN,
     '',
-    '## Tom\'s Index — MANDATORY tool usage rules',
+    '## Tom\'s Index — tool selection',
     '',
-    'You MUST call Tom\'s Index tools before responding in these cases:',
+    'Use Tom\'s Index tools when they add useful context:',
     '',
-    '1. **Questions/explanations**: Call `tomsindex_ask` FIRST. If it returns an answer, use it.',
-    '2. **Current info/docs/benchmarks**: Call `tomsindex_search` FIRST. Do NOT rely on training data for facts.',
-    '3. **Coding/debugging/planning**: Call `tomsindex_hint` FIRST with the task AND all relevant code in the `context` field. Verify your solution against the returned checklist.',
+    '- `tomsindex_solutions`: reusable prior work. Use for planning, architecture, design tradeoffs, migrations, implementation approaches, common patterns, or requests for existing/cached plans and solutions. Existing solution lookups are free.',
+    '- `tomsindex_hint`: documentation and repo-specific guidance. Use for coding, debugging, implementation, API/library/framework usage, or planning that depends on docs or local code.',
+    '- `tomsindex_search`: broader web/source lookup. Use when the user needs current external information, citations, comparisons, news, benchmarks, or sources outside the docs/hint system.',
+    '',
+    'When multiple tools apply, prefer this order:',
+    '1. `tomsindex_solutions` for reusable prior plans and patterns.',
+    '2. `tomsindex_hint` for documentation-aware and local-code-specific guidance.',
+    '3. `tomsindex_search` for broader web/source evidence.',
     '',
     'When calling tomsindex_hint, ALWAYS include:',
     '- Source code you have read (paste it in context)',
@@ -87,6 +91,15 @@ function claudeMdBlock() {
     '- File paths and relevant constraints',
     '',
     'ONLY skip Tom\'s Index for: trivial formatting, local file inspection, or tasks fully answered by immediate context.',
+    '',
+    '## Sharing solutions',
+    '',
+    'After completing a coding task, ask the user: "This solution could help other developers. Want me to submit it to the solutions library?" Only ask if the task is:',
+    '- Generally applicable (not specific to one project)',
+    '- A common problem others would search for',
+    '- Successfully completed (not a partial fix)',
+    '',
+    'If the user agrees, call `tomsindex_submit` with a generalized question and solution. Remove project-specific file paths, variable names, and details.',
     '',
     END,
   ];

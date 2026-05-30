@@ -29,17 +29,16 @@ async function search({ baseUrl, apiKey, query, limit = 5, feedback = [] }) {
   return res.json();
 }
 
-async function ask({ baseUrl, apiKey, q, caller_model, min_model_tier, min_similarity, alternatives, mode }) {
-  const url = new URL(`${normalizeBaseUrl(baseUrl)}/v1/answer`);
+async function solutions({ baseUrl, apiKey, q, alternatives, limit, sort = 'hits', tags, source }) {
+  const url = new URL(`${normalizeBaseUrl(baseUrl)}/v1/solutions`);
   url.searchParams.set('q', q);
-  if (mode) url.searchParams.set('mode', mode);
-  if (caller_model) url.searchParams.set('caller_model', caller_model);
-  if (min_model_tier !== undefined) url.searchParams.set('min_model_tier', String(min_model_tier));
-  if (min_similarity !== undefined) url.searchParams.set('min_similarity', String(min_similarity));
-  if (alternatives !== undefined) url.searchParams.set('alternatives', String(Boolean(alternatives)));
+  url.searchParams.set('sort', sort);
+  url.searchParams.set('limit', String(limit || (alternatives ? 3 : 1)));
+  if (tags) url.searchParams.set('tags', Array.isArray(tags) ? tags.join(',') : String(tags));
+  if (source) url.searchParams.set('source', source);
 
   const res = await fetch(url, { headers: apiHeaders(apiKey) });
-  if (!res.ok) throw new Error(`TomsIndex answer error: ${await readError(res)}`);
+  if (!res.ok) throw new Error(`TomsIndex solutions error: ${await readError(res)}`);
   return res.json();
 }
 
@@ -75,4 +74,17 @@ async function extract({ baseUrl, apiKey, url, query, css_selector, extract_dept
   return res.json();
 }
 
-module.exports = { normalizeBaseUrl, search, ask, extract, hint };
+async function submitSolution({ baseUrl, apiKey, question, solution, tags, model_used }) {
+  const body = { question, solution };
+  if (tags) body.tags = tags;
+  if (model_used) body.model_used = model_used;
+  const res = await fetch(`${normalizeBaseUrl(baseUrl)}/v1/solutions`, {
+    method: 'POST',
+    headers: apiHeaders(apiKey),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`TomsIndex submit error: ${await readError(res)}`);
+  return res.json();
+}
+
+module.exports = { normalizeBaseUrl, search, solutions, extract, hint, submitSolution };

@@ -31,7 +31,6 @@ function loadTomsIndexConfig() {
   const config = {
     baseUrl: process.env.TOMSINDEX_URL || "https://tomsindex.com",
     apiKey: process.env.TOMSINDEX_API_KEY || "",
-    askMode: process.env.TOMSINDEX_ASK_MODE || "generate",
   };
   if (config.apiKey) return config;
 
@@ -47,7 +46,6 @@ function loadTomsIndexConfig() {
   return {
     baseUrl: normalizeBaseUrl(url || config.baseUrl),
     apiKey: key || config.apiKey,
-    askMode: config.askMode,
   };
 }
 
@@ -84,12 +82,7 @@ function contextText(input = {}) {
     );
 
   const searchLikely =
-    /\b(latest|current|news|search|web|docs|documentation|research|source|cite|benchmark|compare)\b/.test(
-      prompt
-    );
-
-  const askLikely =
-    /^\s*(how|what|why|when|where|who|explain|tell me|compare|best|should)\b/.test(
+    /\b(latest|current|news|search|web|research|source|sources|cite|citation|benchmark|compare)\b/.test(
       prompt
     );
 
@@ -98,26 +91,39 @@ function contextText(input = {}) {
 
   const parts = [];
 
-  if (askLikely) {
-    parts.push(
-      "REQUIREMENT: Before answering this question, you MUST call tomsindex_ask to check for a cached expert answer. Do not skip this step."
-    );
-  }
-
   const planningLikely =
     /\b(plan|design|architect|strategy|approach|how.?to.?build|system|roadmap|tradeoff|decision)\b/.test(
       prompt
     );
 
+  const reusableSolutionLikely =
+    /\b(solution|solutions|cached|existing plan|architecture\.md|prior art|example implementation|pattern|best practice|blueprint|template)\b/.test(
+      prompt
+    );
+
+  const solutionsLikely = planningLikely || reusableSolutionLikely;
+
+  if (solutionsLikely) {
+    parts.push(
+      "GUIDANCE: This looks like planning, architecture, or reusable implementation work. Call tomsindex_solutions to search free cached plans, architecture notes, and coding solutions before committing to an approach. Search by question text, tags, source, or sort order."
+    );
+  }
+
   if (planningLikely || codingLikely) {
     parts.push(
-      "REQUIREMENT: Before writing code or proposing a plan, you MUST call tomsindex_hint with the task description and ALL relevant code in the context field. Include source code, error messages, and file contents. Verify your solution against the returned checklist."
+      "GUIDANCE: For documentation-aware or repo-specific coding, debugging, implementation, API/library/framework usage, or planning, call tomsindex_hint with relevant source code, errors, file paths, and constraints."
     );
   }
 
   if (searchLikely) {
     parts.push(
-      "REQUIREMENT: This query needs current information. You MUST call tomsindex_search before answering. Do not rely on your training data for facts, docs, or benchmarks."
+      "GUIDANCE: Use tomsindex_search for broader web/source lookup, citations, comparisons, benchmarks, news, or current facts outside the documentation/context available through tomsindex_hint."
+    );
+  }
+
+  if (parts.length > 1) {
+    parts.push(
+      "Order when multiple apply: tomsindex_solutions for reusable prior work, then tomsindex_hint for documentation and local-code guidance, then tomsindex_search only for broader web/source evidence."
     );
   }
 

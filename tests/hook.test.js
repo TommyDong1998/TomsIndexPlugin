@@ -9,10 +9,11 @@ test('parseHookInput handles invalid JSON', () => {
 });
 
 test('contextText mentions relevant tools', () => {
-  const text = contextText({ prompt: 'how to fix this API bug using latest docs' });
-  assert.match(text, /tomsindex_ask/);
+  const text = contextText({ prompt: 'plan how to fix this API bug using latest benchmarks' });
+  assert.match(text, /tomsindex_solutions/);
   assert.match(text, /tomsindex_hint/);
   assert.match(text, /tomsindex_search/);
+  assert.match(text, /Order when multiple apply/);
 });
 
 test('isSmallModel detects small models', () => {
@@ -29,6 +30,13 @@ test('isSmallModel detects small models', () => {
 test('contextText adds coding hint for coding prompts', () => {
   const text = contextText({ prompt: 'refactor this code' });
   assert.match(text, /tomsindex_hint/);
+  assert.doesNotMatch(text, /tomsindex_search/);
+});
+
+test('contextText treats docs requests as hint work, not broad web search', () => {
+  const text = contextText({ prompt: 'use the React docs to implement this component' });
+  assert.match(text, /tomsindex_hint/);
+  assert.doesNotMatch(text, /tomsindex_search/);
 });
 
 test('additionalContext returns contextText directly', () => {
@@ -37,12 +45,17 @@ test('additionalContext returns contextText directly', () => {
   assert.equal(result, expected);
 });
 
-test('contextText falls back to CLAUDE_MODEL env var when input.model is missing', () => {
+test('contextText does not use solutions for plain explanation prompts', () => {
+  const text = contextText({ prompt: 'explain something' });
+  assert.doesNotMatch(text, /tomsindex_solutions/);
+});
+
+test('contextText uses solutions for planning prompts', () => {
   const orig = process.env.CLAUDE_MODEL;
   process.env.CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
   try {
-    const text = contextText({ prompt: 'explain something' });
-    assert.match(text, /tomsindex_ask/);
+    const text = contextText({ prompt: 'plan the architecture for this feature' });
+    assert.match(text, /tomsindex_solutions/);
   } finally {
     if (orig === undefined) delete process.env.CLAUDE_MODEL;
     else process.env.CLAUDE_MODEL = orig;

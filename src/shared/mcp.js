@@ -4,12 +4,11 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { normalizeBaseUrl, search, ask, extract, hint } = require('./api');
+const { normalizeBaseUrl, search, solutions, extract, hint, submitSolution } = require('./api');
 const PKG_VERSION = require('../../package.json').version;
 
 const BASE_URL = normalizeBaseUrl(process.env.TOMSINDEX_URL);
 const API_KEY = process.env.TOMSINDEX_API_KEY || '';
-const DEFAULT_ASK_MODE = process.env.TOMSINDEX_ASK_MODE || 'generate';
 const SESSION_ID = crypto.randomUUID();
 
 // Write session ID so the hook process can read it and use the same ID
@@ -41,17 +40,17 @@ const TOOLS = [
     },
   },
   {
-    name: 'tomsindex_ask',
-    description: 'Look up a cached or generated answer from Tom\'s Index answer cache.',
+    name: 'tomsindex_solutions',
+    description: 'Search free cached Tom\'s Index plans, architecture notes, and coding solutions by question text, tags, source, or sort order.',
     inputSchema: {
       type: 'object',
       properties: {
-        q: { type: 'string', description: 'Question to answer.' },
-        mode: { type: 'string', enum: ['lookup', 'generate'], description: 'lookup: cache-only, returns null on miss. generate: on cache miss, runs a web search, summarizes the top results, caches the answer, and returns it. Costs 1 search credit.' },
-        caller_model: { type: 'string' },
-        min_model_tier: { type: 'number' },
-        min_similarity: { type: 'number' },
-        alternatives: { type: 'boolean' },
+        q: { type: 'string', description: 'Question text to search for.' },
+        alternatives: { type: 'boolean', description: 'Return up to 3 matching solutions instead of only the top match.' },
+        limit: { type: 'number', description: 'Max results, default 1 or 3 when alternatives is set, maximum 20.' },
+        sort: { type: 'string', enum: ['votes', 'hits', 'recent'], description: 'Sort order. Default: hits.' },
+        tags: { type: 'string', description: 'Comma-separated tags to filter by.' },
+        source: { type: 'string', enum: ['community', 'auto'], description: 'Filter by solution source.' },
       },
       required: ['q'],
     },
@@ -87,6 +86,19 @@ const TOOLS = [
       required: ['q'],
     },
   },
+  {
+    name: 'tomsindex_submit',
+    description: 'Submit a coding solution to the shared solutions library. Before submitting, generalize your solution: remove specific file paths, variable names, and project details. Frame the question as something another developer would search for. Example good question: "Add cursor pagination to a Prisma REST API". Example bad: "Fix the bug in my auth.js file".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        question: { type: 'string', description: 'Clear problem statement, max 200 chars. What problem does this solve?' },
+        solution: { type: 'string', description: 'Step-by-step solution or working code. Min 100 chars.' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Library/topic tags, e.g. ["nextjs", "auth", "prisma"]' },
+      },
+      required: ['question', 'solution'],
+    },
+  },
 ];
 
 function send(msg) {
@@ -103,11 +115,21 @@ function textFromSearch(data) {
     .join('\n\n') || 'No results found.';
 }
 
-function textFromAnswer(data) {
+function textFromSolutions(data) {
+  if (Array.isArray(data.solutions)) {
+    if (data.solutions.length === 0) {
+      return `No cached Tom's Index plan, architecture note, or coding solution found for "${data.meta?.query || 'this question'}". Existing solution lookups are free. Use tomsindex_search next for web/source context, or tomsindex_hint if this is a coding/build task. Raw response:\n${JSON.stringify(data, null, 2)}`;
+    }
+    if (data.solutions.length === 1) return data.solutions[0].answer || JSON.stringify(data.solutions[0], null, 2);
+    return data.solutions.map((s, i) => {
+      const votes = typeof s.votes === 'number' ? s.votes : ((s.upvotes || 0) - (s.downvotes || 0));
+      return `${i + 1}. ${s.question || 'Solution'}\nVotes: ${votes}; hits: ${s.hit_count || 0}; source: ${s.source || 'unknown'}\n${s.answer || ''}`.trimEnd();
+    }).join('\n\n');
+  }
   if (data.answer?.text) return data.answer.text;
   if (data.text) return data.text;
   if (data.cache_hit === false || data.answer === null) {
-    return `No cached Tom's Index answer found for "${data.query || 'this question'}". Use tomsindex_search next for web/source context, or tomsindex_hints if this is a coding/build task. Raw response:\n${JSON.stringify(data, null, 2)}`;
+    return `No cached Tom's Index plan, architecture note, or coding solution found for "${data.query || 'this question'}". Existing solution lookups are free. Use tomsindex_search next for web/source context, or tomsindex_hint if this is a coding/build task. Raw response:\n${JSON.stringify(data, null, 2)}`;
   }
   return JSON.stringify(data, null, 2);
 }
@@ -117,9 +139,9 @@ async function callTool(name, args) {
   if (name === 'tomsindex_search') {
     return textFromSearch(await search({ baseUrl: BASE_URL, apiKey: API_KEY, ...args }));
   }
-  if (name === 'tomsindex_ask') {
-    const askArgs = { mode: DEFAULT_ASK_MODE, ...args };
-    return textFromAnswer(await ask({ baseUrl: BASE_URL, apiKey: API_KEY, ...askArgs }));
+  if (name === 'tomsindex_solutions') {
+    const solutionsArgs = { ...args };
+    return textFromSolutions(await solutions({ baseUrl: BASE_URL, apiKey: API_KEY, ...solutionsArgs }));
   }
   if (name === 'tomsindex_extract') {
     const data = await extract({ baseUrl: BASE_URL, apiKey: API_KEY, ...args });
@@ -163,6 +185,14 @@ async function callTool(name, args) {
       data.recommended_follow_up.forEach((f, i) => parts.push(`${i + 1}. ${f.label}: ${f.q}`));
     }
     return parts.join('\n') || '(No relevant docs or hints found.)';
+  }
+  if (name === 'tomsindex_submit') {
+    const data = await submitSolution({ baseUrl: BASE_URL, apiKey: API_KEY, ...args });
+    if (data.error === 'validation_failed') {
+      return 'Solution rejected:\n' + (data.issues || []).map((i, n) => `${n + 1}. ${i}`).join('\n') + '\n\nFix the issues and try again.';
+    }
+    if (data.error) return `Submit failed: ${data.error}`;
+    return `Solution submitted (id: ${data.id}). It's now in the shared library for other agents to use.`;
   }
   throw new Error(`Unknown tool: ${name}`);
 }

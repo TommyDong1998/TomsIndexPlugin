@@ -65,7 +65,8 @@ test('MCP initialize and tools/list include canonical tools', async () => {
     const names = list.result.tools.map((tool) => tool.name);
     assert.ok(names.includes('tomsindex_search'));
     assert.ok(!names.includes('web_search'));
-    assert.ok(names.includes('tomsindex_ask'));
+    assert.ok(names.includes('tomsindex_solutions'));
+    assert.ok(!names.includes('tomsindex_ask'));
     assert.ok(names.includes('tomsindex_hint'));
   } finally {
     client.close();
@@ -109,31 +110,36 @@ test('MCP unknown tool returns isError', async () => {
   }
 });
 
-test('tomsindex_ask cache miss tells model to fall back to search', async () => {
+test('tomsindex_solutions cache miss tells model to fall back to search', async () => {
   const originalFetch = global.fetch;
   global.fetch = async () => ({
     ok: true,
-    json: async () => ({ query: 'How to build google', cache_hit: false, answer: null }),
+    json: async () => ({ solutions: [], meta: { query: 'How to build google', total: 0 } }),
   });
   try {
-    const text = await callTool('tomsindex_ask', { q: 'How to build google' });
-    assert.match(text, /No cached Tom's Index answer found/);
+    const text = await callTool('tomsindex_solutions', { q: 'How to build google' });
+    assert.match(text, /No cached Tom's Index plan, architecture note, or coding solution found/);
+    assert.match(text, /Existing solution lookups are free/);
     assert.match(text, /Use tomsindex_search next/);
   } finally {
     global.fetch = originalFetch;
   }
 });
 
-test('tomsindex_ask passes mode parameter to API', async () => {
+test('tomsindex_solutions calls solutions API with lookup parameters', async () => {
   const originalFetch = global.fetch;
-  let seenMode = '';
+  let seenPath = '';
+  let seenLimit = '';
   global.fetch = async (url) => {
-    seenMode = new URL(String(url)).searchParams.get('mode');
-    return { ok: true, json: async () => ({ answer: { text: 'generated answer' } }) };
+    const u = new URL(String(url));
+    seenPath = u.pathname;
+    seenLimit = u.searchParams.get('limit');
+    return { ok: true, json: async () => ({ solutions: [{ answer: 'cached solution' }] }) };
   };
   try {
-    await callTool('tomsindex_ask', { q: 'test', mode: 'lookup' });
-    assert.equal(seenMode, 'lookup');
+    await callTool('tomsindex_solutions', { q: 'test', alternatives: true });
+    assert.equal(seenPath, '/v1/solutions');
+    assert.equal(seenLimit, '3');
   } finally {
     global.fetch = originalFetch;
   }

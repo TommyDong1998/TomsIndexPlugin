@@ -16,10 +16,9 @@ const {
   nodeCommandArgs,
 } = require('../shared/config');
 
-function codexManagedBlock({ url, apiKey, publicOnly = false, askMode = 'generate' } = {}) {
+function codexManagedBlock({ url, apiKey, publicOnly = false } = {}) {
   const envLines = [`TOMSINDEX_URL = ${quoteToml(url || 'https://tomsindex.com')}`];
   if (!publicOnly && apiKey) envLines.push(`TOMSINDEX_API_KEY = ${quoteToml(apiKey)}`);
-  envLines.push(`TOMSINDEX_ASK_MODE = ${quoteToml(askMode)}`);
   const [mcpBin, mcpCommand] = nodeCommandArgs('mcp');
   return `${BEGIN}
 [mcp_servers.tomsindex]

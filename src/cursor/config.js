@@ -22,7 +22,6 @@ function installCursor(options = {}) {
     env: {
       TOMSINDEX_URL: options.url || 'https://tomsindex.com',
       ...((!options.publicOnly && options.apiKey) ? { TOMSINDEX_API_KEY: options.apiKey } : {}),
-      TOMSINDEX_ASK_MODE: options.askMode || 'generate',
     },
   };
   existing.mcpServers = servers;

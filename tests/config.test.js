@@ -28,7 +28,7 @@ const {
   BEGIN,
   END,
 } = require('../src/shared/config');
-const { resolveApiKey, resolveAskMode } = require('../src/cli');
+const { resolveApiKey } = require('../src/cli');
 
 function tempHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'tomsindex-test-'));
@@ -111,12 +111,12 @@ test('installCodex removes deprecated codex_hooks feature from existing config',
   assert.match(installed, /hooks = true/);
 });
 
-test('mergeClaudeSettings embeds env vars in hook command', () => {
+test('mergeClaudeSettings embeds current env vars in hook command', () => {
   const result = mergeClaudeSettings({}, { url: 'https://example.com', apiKey: 'srch_abc', askMode: 'generate' });
   const command = result.hooks.UserPromptSubmit[0].hooks[0].command;
   assert.match(command, /TOMSINDEX_URL='https:\/\/example\.com'/);
   assert.match(command, /TOMSINDEX_API_KEY='srch_abc'/);
-  assert.match(command, /TOMSINDEX_ASK_MODE='generate'/);
+  assert.doesNotMatch(command, /TOMSINDEX_ASK_MODE/);
   assert.match(command, /hook claude$/);
 });
 
@@ -125,16 +125,6 @@ test('resolveApiKey accepts explicit key and rejects wrong prefix', async () => 
   await assert.rejects(
     () => resolveApiKey({ 'api-key': 'bad_test' }),
     /Expected a key starting with srch_/,
-  );
-});
-
-test('resolveAskMode accepts explicit mode and defaults public-only to lookup', async () => {
-  assert.equal(await resolveAskMode({ 'ask-mode': 'generate' }), 'generate');
-  assert.equal(await resolveAskMode({ 'ask-mode': 'lookup' }), 'lookup');
-  assert.equal(await resolveAskMode({ 'public-only': true }), 'lookup');
-  await assert.rejects(
-    () => resolveAskMode({ 'ask-mode': 'bad' }),
-    /must be "lookup" or "generate"/,
   );
 });
 
@@ -148,8 +138,8 @@ test('installClaudeMd writes managed block and uninstall removes it', () => {
   const installed = fs.readFileSync(file, 'utf8');
   assert.match(installed, /Existing content here/);
   assert.match(installed, new RegExp(BEGIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(installed, /MANDATORY tool usage rules/);
-  assert.match(installed, /tomsindex_ask/);
+  assert.match(installed, /tool selection/);
+  assert.match(installed, /tomsindex_solutions/);
   assert.match(installed, /tomsindex_search/);
   assert.match(installed, /tomsindex_hint/);
 
@@ -161,7 +151,7 @@ test('installClaudeMd writes managed block and uninstall removes it', () => {
   uninstallClaudeMd({ home });
   const removed = fs.readFileSync(file, 'utf8');
   assert.match(removed, /Existing content here/);
-  assert.doesNotMatch(removed, /tomsindex_ask/);
+  assert.doesNotMatch(removed, /tomsindex_solutions/);
 });
 
 test('installClaudeMd creates file if it does not exist', () => {
@@ -169,10 +159,10 @@ test('installClaudeMd creates file if it does not exist', () => {
   installClaudeMd({ home });
   const file = path.join(home, '.claude', 'CLAUDE.md');
   const content = fs.readFileSync(file, 'utf8');
-  assert.match(content, /MANDATORY tool usage rules/);
+  assert.match(content, /tool selection/);
 });
 
-test('installCodex includes TOMSINDEX_ASK_MODE in managed block', () => {
+test('installCodex does not include deprecated TOMSINDEX_ASK_MODE in managed block', () => {
   const home = tempHome();
   const file = path.join(home, '.codex', 'config.toml');
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -180,7 +170,7 @@ test('installCodex includes TOMSINDEX_ASK_MODE in managed block', () => {
 
   installCodex({ home, url: 'https://tomsindex.com', apiKey: 'srch_test', askMode: 'lookup' });
   const installed = fs.readFileSync(file, 'utf8');
-  assert.match(installed, /TOMSINDEX_ASK_MODE = "lookup"/);
+  assert.doesNotMatch(installed, /TOMSINDEX_ASK_MODE/);
 });
 
 test('installCursor writes MCP config and uninstall removes it', () => {
@@ -190,7 +180,7 @@ test('installCursor writes MCP config and uninstall removes it', () => {
   const installed = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.ok(installed.mcpServers.tomsindex);
   assert.equal(installed.mcpServers.tomsindex.env.TOMSINDEX_API_KEY, 'srch_test');
-  assert.equal(installed.mcpServers.tomsindex.env.TOMSINDEX_ASK_MODE, 'generate');
+  assert.equal(installed.mcpServers.tomsindex.env.TOMSINDEX_ASK_MODE, undefined);
   assert.match(installed.mcpServers.tomsindex.args[0], /tomsindex\.js$/);
 
   uninstallCursor({ home });
